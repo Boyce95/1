@@ -1,0 +1,46 @@
+name: Build Xiaoxing APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 源码位于仓库的 xiaoxing/ 子目录
+      - name: Setup JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 28
+        run: |
+          sdkmanager "platforms;android-28" "build-tools;28.0.3"
+          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "sdk.dir=$SDK_DIR" > xiaoxing/local.properties
+
+      - name: Download Gradle 5.4.1
+        run: |
+          curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-5.4.1-bin.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-5.4.1/bin" >> "$GITHUB_PATH"
+
+      - name: Build APK
+        working-directory: xiaoxing
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaoxing-apk
+          path: xiaoxing/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
