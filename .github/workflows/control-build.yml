@@ -34,6 +34,27 @@ jobs:
           "$SDKMANAGER" "platforms;android-28" "build-tools;28.0.3"
           echo "sdk.dir=$SDK_DIR" > control/local.properties
 
+      # 签名必须固定：debug keystore 每次 runner 都新生成会导致签名不一致，
+      # 新版装不上已装的旧版（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+      - name: Prepare stable debug keystore
+        run: |
+          mkdir -p ~/.android
+          if [ -f control/debug.keystore ]; then
+            cp control/debug.keystore ~/.android/debug.keystore
+            echo "复用仓库里的 debug keystore"
+          else
+            keytool -genkeypair -keystore ~/.android/debug.keystore               -storepass android -keypass android -alias androiddebugkey               -keyalg RSA -keysize 2048 -validity 10000               -dname "CN=Android Debug,O=Android,C=US"
+            cp ~/.android/debug.keystore control/debug.keystore
+            echo "首次生成 debug keystore（请把 artifact 里的文件提交回仓库）"
+          fi
+          keytool -list -keystore ~/.android/debug.keystore -storepass android | tail -3
+
+      - name: Upload keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-keystore
+          path: control/debug.keystore
+
       - name: Download Gradle 5.4.1
         run: |
           curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-5.4.1-bin.zip
