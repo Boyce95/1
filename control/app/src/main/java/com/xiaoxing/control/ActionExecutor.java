@@ -81,6 +81,22 @@ public class ActionExecutor {
                 String keyword = args.optString("keyword", "");
                 return new Result(name, true, listApps(keyword));
             }
+            if ("adb_dump_screen".equals(name)) {
+                if (!ControlService.isReady()) return new Result(name, false, "控制权限未开启");
+                return new Result(name, true, ControlService.getInstance().dumpScreen());
+            }
+            if ("adb_tap_text".equals(name)) {
+                String text = args.getString("text");
+                if (!ControlService.isReady()) return new Result(name, false, "控制权限未开启");
+                boolean ok = ControlService.getInstance().tapText(text);
+                return new Result(name, ok, ok ? "已点击文本: " + text : "未找到可点击的文本: " + text);
+            }
+            if ("adb_input_text".equals(name)) {
+                String text = args.getString("text");
+                if (!ControlService.isReady()) return new Result(name, false, "控制权限未开启");
+                boolean ok = ControlService.getInstance().inputText(text);
+                return new Result(name, ok, ok ? "已输入文本" : "没有聚焦的输入框");
+            }
             if ("adb_devices".equals(name)) {
                 return new Result(name, true, "本机即目标平板");
             }
