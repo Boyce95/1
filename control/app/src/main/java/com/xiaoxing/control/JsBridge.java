@@ -51,4 +51,19 @@ public class JsBridge {
         if (on) KeepAliveService.start(activity);
         else KeepAliveService.stop(activity);
     }
+
+    /**
+     * 小V 联动开关：开启后无障碍服务监听蓝心小V 对话里"用户说的话"，
+     * 通过 window.__onVivoCommand(text) 推给网页，由网页决定是否当作指令执行。
+     */
+    @JavascriptInterface
+    public boolean setVivoWatch(boolean on) {
+        ControlService.setVivoWatch(on);
+        return on;
+    }
+
+    @JavascriptInterface
+    public boolean isVivoWatchOn() {
+        return ControlService.isVivoWatchOn();
+    }
 }
