@@ -14,6 +14,7 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.util.Log;
 import android.view.View;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -81,7 +82,28 @@ public class MainActivity extends Activity {
 
         web.addJavascriptInterface(new JsBridge(this), "XiaoXingBridge");
         web.setWebViewClient(new WebViewClient());
-        web.setWebChromeClient(new WebChromeClient());
+        // WebView 里网页用 getUserMedia 录音时，必须由宿主显式放行，否则一定失败
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        String grantAudio = null;
+                        for (String r : request.getResources()) {
+                            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) { grantAudio = r; break; }
+                        }
+                        if (grantAudio != null
+                                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            request.grant(new String[]{grantAudio});
+                            Log.i(TAG, "webview mic granted");
+                        } else {
+                            request.deny();
+                            Log.w(TAG, "webview mic denied");
+                        }
+                    }
+                });
+            }
+        });
         web.loadUrl(url);
 
         btnPerm.setOnClickListener(new View.OnClickListener() {
