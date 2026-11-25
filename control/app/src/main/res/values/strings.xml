@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小星控制助手</string>
+    <string name="accessibility_desc">允许小星 AI 助手模拟点击、滑动和启动应用，实现语音控制平板。仅在你主动发起语音指令时执行，不会自动监控屏幕内容。</string>
+</resources>
