@@ -27,6 +27,13 @@ public class ControlService extends AccessibilityService {
     private static volatile ControlService instance;
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    /** 蓝心小V 的对话页；用户说的话在 ask_text_view 里，AI 的回复没有稳定 id。 */
+    private static final String VIVO_PKG = "com.vivo.ai.copilot";
+    private static final String VIVO_ASK_ID = "com.vivo.ai.copilot:id/ask_text_view";
+    /** 小V 联动开关：开启后监听小V 对话里用户说的话，推给网页当指令。 */
+    private static volatile boolean watchVivo = false;
+    private volatile String lastVivoCmd = "";
+
     @Override
     public void onServiceConnected() {
         super.onServiceConnected();
@@ -36,7 +43,60 @@ public class ControlService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // 不主动采集屏幕内容，仅在收到指令时派发手势
+        // 默认不采集屏幕内容；只有"小V 联动"开启时才读小V 的对话
+        if (!watchVivo || event == null) return;
+        try {
+            CharSequence pkg = event.getPackageName();
+            if (pkg == null || !VIVO_PKG.contentEquals(pkg)) return;
+            int type = event.getEventType();
+            if (type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                    && type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+            String cmd = readLastVivoAsk();
+            if (cmd == null || cmd.length() == 0 || cmd.equals(lastVivoCmd)) return;
+            lastVivoCmd = cmd;
+            Log.i(TAG, "vivo command: " + cmd);
+            MainActivity act = MainActivity.getInstance();
+            if (act != null) {
+                act.runJs("window.__onVivoCommand && window.__onVivoCommand("
+                        + JSONObject.quote(cmd) + ");");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "onAccessibilityEvent: " + e.getMessage());
+        }
+    }
+
+    /** 取小V 对话里最后一条"用户说的话"。找不到返回 null（比如小V 不在前台）。 */
+    private String readLastVivoAsk() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return null;
+        try {
+            List<AccessibilityNodeInfo> list = root.findAccessibilityNodeInfosByViewId(VIVO_ASK_ID);
+            if (list == null || list.isEmpty()) return null;
+            String last = null;
+            for (AccessibilityNodeInfo n : list) {
+                CharSequence tx = n.getText();
+                if (tx == null) continue;
+                String s = tx.toString().trim();
+                if (s.length() > 0) last = s;
+            }
+            return last;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try { root.recycle(); } catch (Exception ignored) {}
+        }
+    }
+
+    /** 开关小V 联动。开启时清空上次记录，避免立刻重放旧指令。 */
+    public static void setVivoWatch(boolean on) {
+        watchVivo = on;
+        ControlService s = instance;
+        if (s != null) s.lastVivoCmd = "";
+        Log.i(TAG, "vivo watch = " + on);
+    }
+
+    public static boolean isVivoWatchOn() {
+        return watchVivo;
     }
 
     @Override
