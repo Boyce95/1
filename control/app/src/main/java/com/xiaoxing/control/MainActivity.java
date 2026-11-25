@@ -35,9 +35,34 @@ public class MainActivity extends Activity {
     private TextView tvStatus;
     private Button btnPerm;
 
+    /** 供无障碍服务反向调用网页（小V 联动时把用户说的话推进来）。 */
+    private static volatile MainActivity instance;
+
+    public static MainActivity getInstance() {
+        return instance;
+    }
+
+    /** 在 UI 线程执行一段 JS；网页没加载好或已销毁时静默忽略。 */
+    public void runJs(final String js) {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                try {
+                    if (web != null) web.evaluateJavascript(js, null);
+                } catch (Exception ignored) {}
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (instance == this) instance = null;
+        super.onDestroy();
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
         setContentView(R.layout.activity_main);
 
         web = (WebView) findViewById(R.id.webview);
