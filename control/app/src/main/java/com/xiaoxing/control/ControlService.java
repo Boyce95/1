@@ -3,12 +3,20 @@ package com.xiaoxing.control;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.List;
 
 /**
  * 无障碍服务：用系统手势执行点击/滑动/按键，无需 ROOT。
@@ -92,6 +100,130 @@ public class ControlService extends AccessibilityService {
         main.post(new Runnable() {
             @Override public void run() { performGlobalAction(action); }
         });
+    }
+
+    /**
+     * 读取当前屏幕的可交互元素，返回 JSON 数组。
+     * 每项含：text(可见文本)、desc(内容描述)、cls(控件类型)、clickable、editable、
+     * bounds(边界[x1,y1,x2,y2])。只采集有文本或可点击/可编辑的节点，控制体积。
+     */
+    public String dumpScreen() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return "[]";
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return "[]";
+        JSONArray arr = new JSONArray();
+        try {
+            collectNodes(root, arr, 0);
+        } finally {
+            try { root.recycle(); } catch (Exception ignored) {}
+        }
+        return arr.toString();
+    }
+
+    private void collectNodes(AccessibilityNodeInfo node, JSONArray arr, int depth) {
+        if (node == null || depth > 12 || arr.length() >= 120) return;
+        try {
+            CharSequence txt = node.getText();
+            CharSequence desc = node.getContentDescription();
+            boolean clickable = node.isClickable();
+            boolean editable = node.isEditable();
+            boolean scrollable = node.isScrollable();
+            String text = txt == null ? "" : txt.toString().trim();
+            String cd = desc == null ? "" : desc.toString().trim();
+            // 只有带文本、可点击、可编辑或可滚动的节点才纳入，避免噪音
+            if ((text.length() > 0 || cd.length() > 0 || clickable || editable || scrollable) && arr.length() < 120) {
+                Rect r = new Rect();
+                node.getBoundsInScreen(r);
+                if (r.width() > 0 && r.height() > 0) {
+                    JSONObject o = new JSONObject();
+                    o.put("text", text.length() > 80 ? text.substring(0, 80) : text);
+                    o.put("desc", cd.length() > 60 ? cd.substring(0, 60) : cd);
+                    o.put("cls", node.getClassName() == null ? "" : node.getClassName().toString());
+                    o.put("clickable", clickable);
+                    o.put("editable", editable);
+                    o.put("scrollable", scrollable);
+                    JSONArray b = new JSONArray();
+                    b.put(r.left); b.put(r.top); b.put(r.right); b.put(r.bottom);
+                    o.put("bounds", b);
+                    arr.put(o);
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = null;
+                try {
+                    child = node.getChild(i);
+                    collectNodes(child, arr, depth + 1);
+                } finally {
+                    if (child != null) { try { child.recycle(); } catch (Exception ignored) {} }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "collectNodes: " + e.getMessage());
+        }
+    }
+
+    /** 按文本点击：先找完全匹配，再找包含匹配；找到就点击。返回是否成功。 */
+    public boolean tapText(String keyword) {
+        if (keyword == null || keyword.trim().length() == 0) return false;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return false;
+        try {
+            List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(keyword);
+            if (nodes == null || nodes.isEmpty()) return false;
+            // 优先可点击且文本完全匹配的
+            AccessibilityNodeInfo best = null;
+            for (AccessibilityNodeInfo n : nodes) {
+                if (n == null) continue;
+                CharSequence t = n.getText();
+                if (t != null && t.toString().trim().equals(keyword.trim()) && n.isClickable()) { best = n; break; }
+            }
+            if (best == null) {
+                for (AccessibilityNodeInfo n : nodes) {
+                    if (n != null && n.isClickable()) { best = n; break; }
+                }
+            }
+            if (best == null) {
+                // 没有可点击的，用文本节点中心坐标点一下
+                for (AccessibilityNodeInfo n : nodes) {
+                    if (n == null) continue;
+                    Rect r = new Rect();
+                    n.getBoundsInScreen(r);
+                    if (r.width() > 0 && r.height() > 0) {
+                        tap(r.centerX(), r.centerY());
+                        return true;
+                    }
+                }
+                return false;
+            }
+            final AccessibilityNodeInfo target = best;
+            try { return target.performAction(AccessibilityNodeInfo.ACTION_CLICK); } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            Log.w(TAG, "tapText: " + e.getMessage());
+            return false;
+        } finally {
+            try { root.recycle(); } catch (Exception ignored) {}
+        }
+    }
+
+    /** 给当前聚焦的输入框填入文本（清空后写入）。 */
+    public boolean inputText(String text) {
+        if (text == null) return false;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return false;
+        try {
+            AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (focused == null) return false;
+            Bundle args = new Bundle();
+            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+            final AccessibilityNodeInfo target = focused;
+            final Bundle a = args;
+            try { return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, a); } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            Log.w(TAG, "inputText: " + e.getMessage());
+            return false;
+        } finally {
+            try { root.recycle(); } catch (Exception ignored) {}
+        }
     }
 
     private void toast(final String msg) {
