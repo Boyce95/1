@@ -22,6 +22,17 @@ public class JsBridge {
         return executor.listApps("");
     }
 
+    /** 读取当前屏幕的可交互元素（JSON 数组字符串），供 AI 自主操控时“看屏幕”。 */
+    @JavascriptInterface
+    public String getScreen() {
+        if (!ControlService.isReady()) return "[]";
+        try {
+            return ControlService.getInstance().dumpScreen();
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
     @JavascriptInterface
     public boolean isControlReady() {
         return ControlService.isReady();
@@ -32,5 +43,12 @@ public class JsBridge {
         activity.runOnUiThread(new Runnable() {
             @Override public void run() { activity.openAccessibilitySettings(); }
         });
+    }
+
+    /** 自动操控开始/结束时调用，前台服务保活防止后台被系统回收。 */
+    @JavascriptInterface
+    public void setAutoPilot(boolean on) {
+        if (on) KeepAliveService.start(activity);
+        else KeepAliveService.stop(activity);
     }
 }
