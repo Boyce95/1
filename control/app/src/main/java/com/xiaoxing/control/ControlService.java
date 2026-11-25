@@ -32,7 +32,8 @@ public class ControlService extends AccessibilityService {
     private static final String VIVO_ASK_ID = "com.vivo.ai.copilot:id/ask_text_view";
     /** 小V 联动开关：开启后监听小V 对话里用户说的话，推给网页当指令。 */
     private static volatile boolean watchVivo = false;
-    private volatile String lastVivoCmd = "";
+    /** 记住上次推送过的指令；用 static 以免服务重连后把同一条重新推一次。 */
+    private static volatile String lastVivoCmd = "";
 
     @Override
     public void onServiceConnected() {
@@ -72,12 +73,20 @@ public class ControlService extends AccessibilityService {
         try {
             List<AccessibilityNodeInfo> list = root.findAccessibilityNodeInfosByViewId(VIVO_ASK_ID);
             if (list == null || list.isEmpty()) return null;
+            // 返回顺序与界面上下顺序不一定一致，按屏幕纵坐标取最底部的那条才是最新消息
             String last = null;
+            int maxBottom = Integer.MIN_VALUE;
             for (AccessibilityNodeInfo n : list) {
                 CharSequence tx = n.getText();
                 if (tx == null) continue;
                 String s = tx.toString().trim();
-                if (s.length() > 0) last = s;
+                if (s.length() == 0) continue;
+                Rect r = new Rect();
+                n.getBoundsInScreen(r);
+                if (r.bottom >= maxBottom) {
+                    maxBottom = r.bottom;
+                    last = s;
+                }
             }
             return last;
         } catch (Exception e) {
@@ -90,8 +99,7 @@ public class ControlService extends AccessibilityService {
     /** 开关小V 联动。开启时清空上次记录，避免立刻重放旧指令。 */
     public static void setVivoWatch(boolean on) {
         watchVivo = on;
-        ControlService s = instance;
-        if (s != null) s.lastVivoCmd = "";
+        lastVivoCmd = "";
         Log.i(TAG, "vivo watch = " + on);
     }
 
