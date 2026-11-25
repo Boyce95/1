@@ -59,6 +59,8 @@ public class JsBridge {
     @JavascriptInterface
     public boolean setVivoWatch(boolean on) {
         ControlService.setVivoWatch(on);
+        // 联动期间小星常驻后台，同样需要前台服务保活，否则收不到小V 的事件
+        if (on) KeepAliveService.start(activity);
         return on;
     }
 
